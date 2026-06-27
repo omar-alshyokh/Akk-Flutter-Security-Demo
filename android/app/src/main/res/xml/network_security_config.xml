@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hardened network security config.
+  - Cleartext (HTTP) disabled app-wide.
+  - Trusts only the system CA store (not user-added CAs), which blocks the common
+    "install a proxy CA" interception path for any non-pinned traffic.
+  akk_flutter_sec_sdk additionally performs native SPKI certificate pinning for the
+  hosts registered in AkkSecConfig.pinnedHosts.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
