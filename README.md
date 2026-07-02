@@ -59,6 +59,7 @@ flutter pub get
   ```
 - For **App Attest**, add the **App Attest** capability in Xcode
   (Signing & Capabilities → + Capability → App Attest) and test on a real device.
+  *(Already enabled in this demo — see [Testing App Attest end-to-end](#testing-app-attest-end-to-end-ios).)*
 
 ## 3. Configure & initialize
 Call `AkkSec.initialize()` once before `runApp` (see `lib/main.dart`). Cross‑platform
@@ -158,6 +159,73 @@ Integrity)**. Check the app card + the server console.
 > ⚠️ **Never commit** `server/service-account.json`, `server/.env`, `android/key.properties`,
 > or `android/keystores/` — they're gitignored for you. The project number, SHA-256
 > fingerprints and `.env.example` are safe to commit.
+
+## Testing App Attest end-to-end (iOS)
+
+The device asks Apple's **Secure Enclave** to (1) create a hardware key and produce an
+**attestation** proving the app+key are genuine, then (2) sign each request with an
+**assertion**. The same local server ([`server/`](server/)) verifies both against Apple's
+root CA. **No App Store Connect setup is needed** and **no TestFlight install is required** —
+App Attest works from a direct Xcode run to a real device.
+
+### Prerequisites
+- A **real iPhone/iPad** (App Attest uses the Secure Enclave — it is `unavailable` on the
+  Simulator).
+- A paid **Apple Developer** account / team (here: `RM486MVDAU`).
+
+### A. App Attest capability (already done in this repo)
+This project already ships the capability, so there is nothing to click in Xcode:
+- [`ios/Runner/Runner.entitlements`](ios/Runner/Runner.entitlements) declares
+  `com.apple.developer.devicecheck.appattest-environment = development`.
+- It is wired into the Debug/Release/Profile build configs, and **automatic signing**
+  provisions the App ID capability for you on first build.
+
+> Doing it from scratch in another app? In Xcode: **Runner target → Signing & Capabilities
+> → + Capability → App Attest**. That creates the entitlement above. Leave it at
+> `development` for testing; switch to `production` only for the App Store build.
+> **The entitlement environment and the server's `APP_ATTEST_ENV` must match** — a
+> `development` app verified against a `production` server (or vice‑versa) fails the
+> AAGUID check (`appattestdevelop` vs `appattest`).
+
+### B. Give the server Apple's root CA + iOS identifiers
+The server verifies the attestation certificate chain against Apple's App Attestation root.
+```bash
+cd server
+mkdir -p certs
+curl -o certs/Apple_App_Attestation_Root_CA.pem \
+  https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem
+```
+Then in `server/.env` (copy from `.env.example` if you haven't):
+```bash
+IOS_TEAM_ID=RM486MVDAU
+IOS_BUNDLE_ID=com.akksec.demo.akksecflutterdemo
+APPLE_APP_ATTEST_ROOT_CA=./certs/Apple_App_Attestation_Root_CA.pem
+APP_ATTEST_ENV=development        # must match the entitlement above
+```
+
+### C. Restart the server (required)
+The `.env` and the root CA are read **once at startup**, so pick up the new values with a
+restart. **ngrok stays as‑is** — same tunnel URL.
+```bash
+# Ctrl-C the running server, then:
+npm start
+# console should print:  Apple root CA: loaded
+```
+The one server serves both platforms at once; you don't run a second instance for iOS.
+
+### D. Verify on the device
+Install on a real device (Xcode run, or `flutter run --release`), open **Backend
+attestation verify**, set the **Server URL** to your ngrok URL, then **Verify (App Attest)**.
+The app runs the full round‑trip: `/challenge` → `generateKey` → `attestKey` →
+`POST /verify/app-attest/attestation` → `generateAssertion` →
+`POST /verify/app-attest/assertion`.
+- Attestation success → `{ ok: true, keyId, aaguid: "appattestdevelop" }`.
+- Assertion success → `{ ok: true, counter: N }`.
+- A wrong `APP_ATTEST_ENV`, Simulator, or missing CA is what makes it fail — check the
+  server console for the exact reason.
+
+> ⚠️ The App Attest verifier in `server/appAttest.js` is a **reference implementation**
+> (in‑memory key store, no auth). Review it before using anything like it in production.
 
 ## Build for distribution
 **Android** (bump `version:` in `pubspec.yaml` so the build number is higher than the last
