@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  App Attest environment. Use "development" while testing from Xcode or
+	  TestFlight against a development-configured backend, and switch to
+	  "production" for the App Store release. Keep this in sync with the
+	  verification server's APP_ATTEST_ENV.
+	-->
+	<key>com.apple.developer.devicecheck.appattest-environment</key>
+	<string>development</string>
+</dict>
+</plist>
