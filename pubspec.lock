@@ -5,11 +5,11 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "v0.3.1"
-      resolved-ref: a7f18788b018978e01b14be83541e030c7c4928f
+      ref: "v0.3.2"
+      resolved-ref: "2ff6dbe21e51bb3cd4443a1dedbd2e4a0f96b701"
       url: "git@github.com:akkodis-dmcc/Akk-Flutter-Security-SDK.git"
     source: git
-    version: "0.3.1"
+    version: "0.3.2"
   async:
     dependency: transitive
     description:
