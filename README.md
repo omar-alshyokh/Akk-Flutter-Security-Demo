@@ -114,13 +114,64 @@ The full, commented config + every call is in `lib/main.dart`.
 flutter run --release        # use --release so tamper/posture reflect a signed build
 ```
 
-## Build for distribution
-**Android**
+## Testing Play Integrity end-to-end (Android)
+
+The device gets a Play Integrity token; a small local server ([`server/`](server/))
+decodes it with Google and returns the verdict.
+
+### A. Google Play + Cloud (one-time)
+1. **Play Console → your app → Test and release → App integrity → Play Integrity API →
+   Link Cloud project.** If the dropdown is empty, create a project first at
+   [console.cloud.google.com](https://console.cloud.google.com) (New Project), then refresh.
+2. Note the **project number** → set it in `lib/main.dart`:
+   `const int _playIntegrityCloudProjectNumber = 717693569664;`
+3. In that GCP project: **APIs & Services → Library → "Play Integrity API" → Enable**.
+4. **IAM & Admin → Service Accounts → Create service account** → open it → **Keys → Add key
+   → Create new key → JSON** → save as `server/service-account.json`.
+
+### B. Run the server
 ```bash
-flutter build apk --release --obfuscate --split-debug-info=build/symbols      # APK (audit / direct install)
-flutter build appbundle --release --obfuscate --split-debug-info=build/symbols # AAB (Play Console)
+cd server
+npm install
+cp .env.example .env         # then edit:
+#   ANDROID_PACKAGE_NAME=com.smartx.fluttersecuirtydemo
+#   GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
+npm start                    # -> http://localhost:8080
+```
+
+### C. Expose it with ngrok
+```bash
+brew install ngrok/ngrok/ngrok          # or download from ngrok.com/download
+ngrok config add-authtoken <YOUR_TOKEN> # once, from your ngrok dashboard
+ngrok http 8080
+```
+Copy the `https://….ngrok-free.dev` "Forwarding" URL. Put it in the app's **Server URL**
+field (or set it as the default `_serverController` text in `lib/main.dart`).
+
+### D. Verify
+Run the app on a **real device**, open **Backend attestation verify → Verify (Play
+Integrity)**. Check the app card + the server console.
+- `MEETS_DEVICE_INTEGRITY` ✅ + `requestHash` matching the challenge = the whole chain works.
+- A **debug** build shows `UNRECOGNIZED_VERSION` / `UNEVALUATED` — expected. Install the
+  build **from Play internal testing** to get `PLAY_RECOGNIZED` / `ok:true`.
+
+> ⚠️ **Never commit** `server/service-account.json`, `server/.env`, `android/key.properties`,
+> or `android/keystores/` — they're gitignored for you. The project number, SHA-256
+> fingerprints and `.env.example` are safe to commit.
+
+## Build for distribution
+**Android** (bump `version:` in `pubspec.yaml` so the build number is higher than the last
+Play upload):
+```bash
+flutter build appbundle --release --obfuscate --split-debug-info=build/symbols # AAB → Play Console
+flutter build apk --release --obfuscate --split-debug-info=build/symbols       # APK → audit / direct install
 ```
 Release signing is read from `android/key.properties` (not committed).
+
+**Upload for internal testing:** Play Console → your app → **Test and release → Testing →
+Internal testing → Create new release** → upload the **AAB** → roll out → share the opt-in
+link → install from the Play Store on the device. (That Play-signed install is what makes
+Play Integrity return `PLAY_RECOGNIZED`.)
 
 **iOS** — always archive via Flutter (a direct Xcode archive misses the SwiftPM package
 and fails with *"Missing package product FlutterGeneratedPluginSwiftPackage"*):

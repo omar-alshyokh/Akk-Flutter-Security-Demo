@@ -1,0 +1,17 @@
+{
+  "name": "akksec-verify-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Local test server that verifies Play Integrity tokens and App Attest attestations/assertions for the AkkSec demo.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@peculiar/x509": "^1.11.0",
+    "cbor": "^9.0.2",
+    "express": "^4.19.2",
+    "googleapis": "^140.0.1"
+  }
+}

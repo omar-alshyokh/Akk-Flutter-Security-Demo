@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:akk_flutter_sec_sdk/akk_flutter_sec_sdk.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 // ---------------------------------------------------------------------------
 // Configuration — every available AkkSecConfig option is shown here.
@@ -15,8 +19,8 @@ import 'package:flutter/material.dart';
 const String _apiBase = 'https://jsonplaceholder.typicode.com';
 
 // Android Play Integrity: your Google Cloud project number (Play Console →
-// App integrity). 0 = enabled but unconfigured.
-const int _playIntegrityCloudProjectNumber = 0;
+// App integrity). Linked project "akksec-integrity".
+const int _playIntegrityCloudProjectNumber = 717693569664;
 
 const AkkSecConfig _config = AkkSecConfig(
   // --- enabledChecks: which posture checks run. Remove a line to disable it. ---
@@ -147,6 +151,13 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
   String _storageStatus = 'Not run';
   String _biometricStatus = 'Not run';
   bool _tapjackingOn = false;
+  bool _previewBlock = false;
+
+  // Backend attestation verification (against the server/ Node app).
+  final TextEditingController _serverController =
+      TextEditingController(text: 'https://defiling-judiciary-resonate.ngrok-free.dev');
+  String _verifyStatus = 'Enter your server URL, then verify.';
+  bool _verifyBusy = false;
 
   @override
   void initState() {
@@ -169,6 +180,7 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
   @override
   void dispose() {
     _monitorSub?.cancel();
+    _serverController.dispose();
     super.dispose();
   }
 
@@ -289,6 +301,88 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
     }
   }
 
+  // 'ngrok-skip-browser-warning' bypasses ngrok's free-tier interstitial page.
+  static const _apiHeaders = {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+  };
+
+  Future<String> _getChallenge(String base) async {
+    final res = await http.get(Uri.parse('$base/challenge'), headers: _apiHeaders);
+    return (jsonDecode(res.body) as Map)['challenge'] as String;
+  }
+
+  Future<http.Response> _post(String url, Map<String, Object?> body) {
+    return http.post(Uri.parse(url), headers: _apiHeaders, body: jsonEncode(body));
+  }
+
+  Future<void> _verifyWithBackend() async {
+    final base = _serverController.text.trim().replaceAll(RegExp(r'/+$'), '');
+    if (base.isEmpty || base.contains('YOUR-TUNNEL')) {
+      setState(() => _verifyStatus = 'Set your real server URL first.');
+      return;
+    }
+    setState(() {
+      _verifyBusy = true;
+      _verifyStatus = 'Contacting server…';
+    });
+    try {
+      if (Platform.isAndroid) {
+        // Play Integrity: challenge -> prepare -> token -> POST to server.
+        final challenge = await _getChallenge(base);
+        final prep = await AkkSec.prepareAppIntegrityProvider(
+          androidCloudProjectNumber: _playIntegrityCloudProjectNumber,
+        );
+        if (!prep.isPrepared) {
+          setState(() => _verifyStatus = 'prepare: ${prep.status} — ${prep.message}');
+          return;
+        }
+        final token = await AkkSec.requestAppIntegrityAssertion(requestHash: challenge);
+        if (!token.isIssued) {
+          setState(() => _verifyStatus = 'token: ${token.status} — ${token.message}');
+          return;
+        }
+        final res = await _post('$base/verify/play-integrity', {'token': token.token});
+        setState(() => _verifyStatus = 'Play Integrity → HTTP ${res.statusCode}\n${res.body}');
+      } else if (Platform.isIOS) {
+        // App Attest: attest once, then a per-request assertion.
+        final challenge = await _getChallenge(base);
+        final prep = await AkkSec.prepareAppIntegrityProvider();
+        if (!prep.isPrepared) {
+          setState(() => _verifyStatus = 'prepare: ${prep.status} — ${prep.message}');
+          return;
+        }
+        final attest = await AkkSec.requestAppAttestation(challenge: challenge);
+        if (!attest.isAttested) {
+          setState(() => _verifyStatus = 'attest: ${attest.status} — ${attest.message}');
+          return;
+        }
+        final attRes = await _post('$base/verify/app-attest/attestation', {
+          'keyId': attest.keyId,
+          'attestation': attest.attestationObject,
+          'challenge': challenge,
+        });
+        final challenge2 = await _getChallenge(base);
+        final assertion = await AkkSec.requestAppIntegrityAssertion(requestHash: challenge2);
+        final asrRes = await _post('$base/verify/app-attest/assertion', {
+          'keyId': attest.keyId,
+          'assertion': assertion.token,
+          'challenge': challenge2,
+        });
+        setState(() => _verifyStatus =
+            'attestation → HTTP ${attRes.statusCode} ${attRes.body}\n\nassertion → HTTP ${asrRes.statusCode} ${asrRes.body}');
+      } else {
+        setState(() => _verifyStatus = 'Attestation runs on Android/iOS devices only.');
+      }
+    } on AkkSecException catch (e) {
+      setState(() => _verifyStatus = '${e.code.value}: ${e.message}');
+    } catch (e) {
+      setState(() => _verifyStatus = 'Error: $e');
+    } finally {
+      if (mounted) setState(() => _verifyBusy = false);
+    }
+  }
+
   String _preview(String body) {
     final t = body.trim();
     return t.length > 160 ? '${t.substring(0, 160)}…' : t;
@@ -298,6 +392,15 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
   Widget build(BuildContext context) {
     final result = _result;
     final decision = _decision;
+
+    // ENFORCEMENT GATE: when the policy blocks (a real threat, e.g. root/tamper/
+    // hook), refuse to render the app. Only enforced in RELEASE builds — a debug
+    // build is signed with the debug key, so tamper (correctly) fires and would
+    // otherwise lock you out during development. `_previewBlock` still lets you
+    // see the screen on demand.
+    if (_previewBlock || (kReleaseMode && (decision?.isBlocked ?? false))) {
+      return _blockedScreen(decision?.blockingReasons ?? const ['preview']);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -313,6 +416,13 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Preview the "access blocked" screen',
+            icon: const Icon(Icons.gpp_bad_outlined),
+            onPressed: () => setState(() => _previewBlock = true),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -360,7 +470,57 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
               onChanged: _toggleTapjacking,
             ),
           ) : Container(),
+          const SizedBox(height: 12),
+          _verifyCard(),
         ],
+      ),
+    );
+  }
+
+  Widget _verifyCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.verified_outlined, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Backend attestation verify')),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _serverController,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                labelText: 'Server URL',
+                hintText: 'https://xxxx.ngrok-free.app',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _verifyBusy ? null : _verifyWithBackend,
+                icon: _verifyBusy
+                    ? const SizedBox(
+                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.cloud_upload_outlined),
+                label: Text(_platform.isIOS
+                    ? 'Attest + verify (App Attest)'
+                    : 'Verify (Play Integrity)'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(_verifyStatus,
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: 11.5, color: Colors.white70)),
+          ],
+        ),
       ),
     );
   }
@@ -559,6 +719,44 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
             Text(_integrityStatus,
                 style: const TextStyle(fontSize: 12, color: Colors.white70)),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _blockedScreen(List<String> reasons) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A0B0B),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.gpp_bad, color: Colors.redAccent, size: 96),
+              const SizedBox(height: 24),
+              const Text('Access blocked',
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 12),
+              Text(
+                'This device does not meet the security requirements to run this app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+              ),
+              const SizedBox(height: 16),
+              Text('Reasons: ${reasons.join(", ")}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              const SizedBox(height: 32),
+              OutlinedButton(
+                onPressed: () {
+                  setState(() => _previewBlock = false);
+                  _scan();
+                },
+                child: const Text('Re-check'),
+              ),
+            ],
+          ),
         ),
       ),
     );

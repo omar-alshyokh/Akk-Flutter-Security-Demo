@@ -49,3 +49,9 @@ android/key.properties
 android/keystores/
 *.jks
 *.keystore
+
+# Node test server secrets & deps
+server/.env
+server/service-account.json
+server/node_modules/
+/build/symbols/
