@@ -181,11 +181,22 @@ This project already ships the capability, so there is nothing to click in Xcode
   provisions the App ID capability for you on first build.
 
 > Doing it from scratch in another app? In Xcode: **Runner target → Signing & Capabilities
-> → + Capability → App Attest**. That creates the entitlement above. Leave it at
-> `development` for testing; switch to `production` only for the App Store build.
-> **The entitlement environment and the server's `APP_ATTEST_ENV` must match** — a
-> `development` app verified against a `production` server (or vice‑versa) fails the
-> AAGUID check (`appattestdevelop` vs `appattest`).
+> → + Capability → App Attest**. That creates the entitlement above.
+
+> ⚠️ **The App Attest environment depends on how the build is *installed*, not on the
+> source entitlement value** — and the server's `APP_ATTEST_ENV` must match the
+> *installed* build's environment (it drives the AAGUID check, `appattestdevelop` vs
+> `appattest`):
+>
+> | How the build is installed | App Attest environment | Set `APP_ATTEST_ENV` to |
+> |---|---|---|
+> | Run directly from Xcode (development signing) | `development` | `development` |
+> | **TestFlight / App Store** (distribution signing) | **`production`** | **`production`** |
+>
+> The App Store export re‑signs the app to the `production` environment even though the
+> source entitlement here says `development`, so an uploaded **TestFlight** build must be
+> verified against a **`production`** server. A mismatch fails with
+> `Unexpected aaguid "appattest"` (or `"appattestdevelop"`).
 
 ### B. Give the server Apple's root CA + iOS identifiers
 The server verifies the attestation certificate chain against Apple's App Attestation root.
@@ -200,7 +211,7 @@ Then in `server/.env` (copy from `.env.example` if you haven't):
 IOS_TEAM_ID=RM486MVDAU
 IOS_BUNDLE_ID=com.akksec.demo.akksecflutterdemo
 APPLE_APP_ATTEST_ROOT_CA=./certs/Apple_App_Attestation_Root_CA.pem
-APP_ATTEST_ENV=development        # must match the entitlement above
+APP_ATTEST_ENV=development        # 'development' for Xcode-run; 'production' for TestFlight/App Store
 ```
 
 ### C. Restart the server (required)
