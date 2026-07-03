@@ -32,7 +32,7 @@ dependencies:
   akk_flutter_sec_sdk:
     git:
       url: git@github.com:akkodis-dmcc/Akk-Flutter-Security-SDK.git
-      ref: v0.3.0   # pin to a tag
+      ref: v0.3.5   # pin to a tag
 ```
 ```bash
 flutter pub get
@@ -49,6 +49,13 @@ flutter pub get
   ```kotlin
   class MainActivity : FlutterFragmentActivity()
   ```
+- Add the **INTERNET permission to the *main* manifest** (Flutter only injects it into the
+  debug/profile manifests, so a **release** build has no network otherwise — Play Integrity
+  and pinned requests silently fail):
+  ```xml
+  <!-- android/app/src/main/AndroidManifest.xml -->
+  <uses-permission android:name="android.permission.INTERNET"/>
+  ```
 
 ### iOS
 - Deployment target **13.0+**.
@@ -60,6 +67,9 @@ flutter pub get
 - For **App Attest**, add the **App Attest** capability in Xcode
   (Signing & Capabilities → + Capability → App Attest) and test on a real device.
   *(Already enabled in this demo — see [Testing App Attest end-to-end](#testing-app-attest-end-to-end-ios).)*
+- **Export compliance:** add `ITSAppUsesNonExemptEncryption = false` to `Info.plist` so App
+  Store Connect stops asking the encryption question on every upload (the app uses only
+  exempt encryption — HTTPS + Apple OS crypto for authentication).
 
 ## 3. Configure & initialize
 Call `AkkSec.initialize()` once before `runApp` (see `lib/main.dart`). Cross‑platform
