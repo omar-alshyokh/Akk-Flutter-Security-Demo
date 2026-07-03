@@ -55,3 +55,6 @@ server/.env
 server/service-account.json
 server/node_modules/
 /build/symbols/
+
+# App Attest root CA is downloaded locally (public cert, kept out of git)
+server/certs/
