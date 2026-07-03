@@ -4,6 +4,11 @@
 <dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Authenticate to protect sensitive actions in this app.</string>
+	<!-- Export compliance: the app only uses exempt encryption (HTTPS/TLS and
+	     Apple OS-provided crypto for authentication/attestation). This declares
+	     no non-exempt encryption, so App Store Connect stops asking on upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
