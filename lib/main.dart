@@ -184,6 +184,9 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
     super.dispose();
   }
 
+  /// Runs the posture checks and applies the policy in one call
+  /// (`evaluateAppLaunch`). The returned `RiskDecision` drives the "Allowed /
+  /// Blocked" banner and, in release builds, the full-screen block (see build()).
   Future<void> _scan() async {
     setState(() {
       _scanning = true;
@@ -243,6 +246,10 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
     }
   }
 
+  /// "App Attest / Play Integrity" card. Prepares the provider, then requests a
+  /// token/assertion. NOTE: on iOS this is an *assertion only* (no backend round
+  /// trip), so it only succeeds once a key has been attested via the backend
+  /// card below; the full, correct iOS flow is [_verifyWithBackend].
   Future<void> _runIntegrity() async {
     setState(() {
       _integrityBusy = true;
@@ -316,6 +323,11 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
     return http.post(Uri.parse(url), headers: _apiHeaders, body: jsonEncode(body));
   }
 
+  /// The real end-to-end attestation round trip against the local `server/`.
+  /// Android (Play Integrity): challenge -> prepare -> token -> POST /verify/play-integrity.
+  /// iOS (App Attest): challenge -> attest -> POST .../attestation (registers the device
+  /// key), then a second challenge -> assertion -> POST .../assertion. The server's
+  /// APP_ATTEST_ENV must match how the app was installed (development vs production).
   Future<void> _verifyWithBackend() async {
     final base = _serverController.text.trim().replaceAll(RegExp(r'/+$'), '');
     if (base.isEmpty || base.contains('YOUR-TUNNEL')) {

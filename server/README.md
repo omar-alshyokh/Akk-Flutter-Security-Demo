@@ -34,8 +34,14 @@ npm start
    curl -o certs/Apple_App_Attestation_Root_CA.pem \
      https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem
    ```
-2. Set `IOS_TEAM_ID`, `IOS_BUNDLE_ID`, and `APP_ATTEST_ENV`
-   (`development` while testing via Xcode/TestFlight, `production` for App Store).
+2. Set `IOS_TEAM_ID`, `IOS_BUNDLE_ID`, and `APP_ATTEST_ENV`. `APP_ATTEST_ENV` must match
+   how the app was **installed**, not the source entitlement:
+   - `development` — a build run directly from Xcode.
+   - `production` — a **TestFlight or App Store** install (distribution signing re-signs
+     the app to the production App Attest environment).
+
+   A mismatch fails the AAGUID check (`appattest` vs `appattestdevelop`). Restart the
+   server after changing `.env`.
 
 ## Reaching the server from the phone
 - **Same Wi‑Fi:** use your laptop's LAN IP, e.g. `http://192.168.1.20:8080`.
