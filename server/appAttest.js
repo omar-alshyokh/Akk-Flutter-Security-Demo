@@ -93,15 +93,20 @@ function verifyAssertion(opts) {
     const signature = Buffer.from(assertion.signature);
     const authenticatorData = Buffer.from(assertion.authenticatorData);
 
+    // Apple signs the assertion over nonce = SHA256(authenticatorData || clientDataHash).
+    // The key is ES256 (ECDSA + SHA256), so crypto.verify('sha256', nonce, ...) hashes
+    // nonce once more and checks the ECDSA signature over SHA256(nonce) — matching how
+    // the Secure Enclave produced it. Passing the un-hashed concatenation would be one
+    // SHA256 short and always fail.
     const clientDataHash = sha256(Buffer.from(challenge));
-    const signedData = Buffer.concat([authenticatorData, clientDataHash]);
+    const nonce = sha256(Buffer.concat([authenticatorData, clientDataHash]));
 
     const key = crypto.createPublicKey({
       key: Buffer.from(publicKeySpkiBase64, 'base64'),
       format: 'der',
       type: 'spki',
     });
-    const valid = crypto.verify('sha256', signedData, { key, dsaEncoding: 'der' }, signature);
+    const valid = crypto.verify('sha256', nonce, { key, dsaEncoding: 'der' }, signature);
     if (!valid) throw new Error('Assertion signature is invalid.');
 
     const rpIdHash = authenticatorData.subarray(0, 32);
