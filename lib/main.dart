@@ -151,7 +151,6 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
   String _storageStatus = 'Not run';
   String _biometricStatus = 'Not run';
   bool _tapjackingOn = false;
-  bool _previewBlock = false;
 
   // Backend attestation verification (against the server/ Node app).
   final TextEditingController _serverController =
@@ -405,13 +404,13 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
     final result = _result;
     final decision = _decision;
 
-    // ENFORCEMENT GATE: when the policy blocks (a real threat, e.g. root/tamper/
-    // hook), refuse to render the app. Only enforced in RELEASE builds — a debug
-    // build is signed with the debug key, so tamper (correctly) fires and would
-    // otherwise lock you out during development. `_previewBlock` still lets you
-    // see the screen on demand.
-    if (_previewBlock || (kReleaseMode && (decision?.isBlocked ?? false))) {
-      return _blockedScreen(decision?.blockingReasons ?? const ['preview']);
+    // ENFORCEMENT GATE: when the policy blocks a real threat (root/jailbreak,
+    // tamper, hook, …), refuse to render the app and show the block screen.
+    // Enforced in RELEASE builds only — a debug build is signed with the debug
+    // key, so tamper (correctly) fires and would otherwise lock out development.
+    // QA/TestFlight builds are release, so real threats are enforced there.
+    if (kReleaseMode && (decision?.isBlocked ?? false)) {
+      return _blockedScreen(decision?.blockingReasons ?? const []);
     }
 
     return Scaffold(
@@ -429,10 +428,9 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Preview the "access blocked" screen',
-            icon: const Icon(Icons.gpp_bad_outlined),
-            onPressed: () => setState(() => _previewBlock = true),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _statusIndicator(decision),
           ),
         ],
       ),
@@ -755,23 +753,85 @@ class _SecurityHomePageState extends State<SecurityHomePage> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
               ),
-              const SizedBox(height: 16),
-              Text('Reasons: ${reasons.join(", ")}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              const SizedBox(height: 20),
+              if (reasons.isNotEmpty)
+                Column(
+                  children: reasons
+                      .map((r) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.circle, size: 6, color: Colors.redAccent),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(_reasonLabel(r),
+                                      style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.85),
+                                          fontSize: 14)),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                ),
               const SizedBox(height: 32),
-              OutlinedButton(
-                onPressed: () {
-                  setState(() => _previewBlock = false);
-                  _scan();
-                },
-                child: const Text('Re-check'),
+              OutlinedButton.icon(
+                onPressed: _scan,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Re-check'),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Live at-a-glance posture indicator shown in the app bar. Reflects the last
+  /// policy decision — a green shield when allowed, red when blocked. Purely
+  /// informational (not a control).
+  Widget _statusIndicator(RiskDecision? decision) {
+    if (decision == null) {
+      return const Icon(Icons.shield_outlined, color: Colors.white54);
+    }
+    final blocked = decision.isBlocked;
+    return Tooltip(
+      message: blocked ? 'Blocked by RiskPolicy' : 'Allowed by RiskPolicy',
+      child: Icon(
+        blocked ? Icons.gpp_bad : Icons.verified_user,
+        color: blocked ? Colors.redAccent : Colors.greenAccent,
+      ),
+    );
+  }
+
+  /// Turns a raw policy reason code (e.g. "tamper") into a human-readable line
+  /// for the block screen. Unknown codes fall through to the raw value.
+  String _reasonLabel(String reason) {
+    switch (reason) {
+      case 'root':
+        return 'This device appears to be rooted.';
+      case 'jailbreak':
+        return 'This device appears to be jailbroken.';
+      case 'tamper':
+        return 'The app failed its integrity check (tampered or re-signed).';
+      case 'hook':
+        return 'A hooking / instrumentation framework was detected.';
+      case 'debug':
+        return 'A debugger is attached to the app.';
+      case 'simulator':
+        return 'The app is running on a simulator.';
+      case 'emulator':
+        return 'The app is running on an emulator.';
+      default:
+        return 'Security requirement not met: $reason.';
+    }
   }
 
   Widget _actionCard({
